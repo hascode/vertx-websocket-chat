@@ -27,62 +27,72 @@ public class WebserverVerticle extends Verticle {
 		final EventBus eventBus = vertx.eventBus();
 		final Logger logger = container.logger();
 
-		RouteMatcher httpRouteMatcher = new RouteMatcher().get("/", new Handler<HttpServerRequest>() {
-			@Override
-			public void handle(final HttpServerRequest request) {
-				request.response().sendFile("web/chat.html");
-			}
-		}).get(".*\\.(css|js)$", new Handler<HttpServerRequest>() {
+		RouteMatcher httpRouteMatcher = new RouteMatcher().get("/",
+				new Handler<HttpServerRequest>() {
+					@Override
+					public void handle(final HttpServerRequest request) {
+						request.response().sendFile("web/chat.html");
+					}
+				}).get(".*\\.(css|js)$", new Handler<HttpServerRequest>() {
 			@Override
 			public void handle(final HttpServerRequest request) {
 				request.response().sendFile("web/" + new File(request.path()));
 			}
 		});
 
-		vertx.createHttpServer().requestHandler(httpRouteMatcher).listen(8080, "localhost");
-
-		vertx.createHttpServer().websocketHandler(new Handler<ServerWebSocket>() {
-			@Override
-			public void handle(final ServerWebSocket ws) {
-				final Matcher m = chatUrlPattern.matcher(ws.path());
-				if (!m.matches()) {
-					ws.reject();
-					return;
-				}
-
-				final String chatRoom = m.group(1);
-				final String id = ws.textHandlerID();
-				logger.info("registering new connection with id: " + id + " for chat-room: " + chatRoom);
-				vertx.sharedData().getSet("chat.room." + chatRoom).add(id);
-
-				ws.closeHandler(new Handler<Void>() {
+		vertx.createHttpServer().requestHandler(httpRouteMatcher)
+				.websocketHandler(new Handler<ServerWebSocket>() {
 					@Override
-					public void handle(final Void event) {
-						logger.info("un-registering connection with id: " + id + " from chat-room: " + chatRoom);
-						vertx.sharedData().getSet("chat.room." + chatRoom).remove(id);
-					}
-				});
-
-				ws.dataHandler(new Handler<Buffer>() {
-					@Override
-					public void handle(final Buffer data) {
-
-						ObjectMapper m = new ObjectMapper();
-						try {
-							JsonNode rootNode = m.readTree(data.toString());
-							((ObjectNode) rootNode).put("received", new Date().toString());
-							String jsonOutput = m.writeValueAsString(rootNode);
-							logger.info("json generated: " + jsonOutput);
-							for (Object chatter : vertx.sharedData().getSet("chat.room." + chatRoom)) {
-								eventBus.send((String) chatter, jsonOutput);
-							}
-						} catch (IOException e) {
+					public void handle(final ServerWebSocket ws) {
+						final Matcher m = chatUrlPattern.matcher(ws.path());
+						if (!m.matches()) {
 							ws.reject();
+							return;
 						}
-					}
-				});
 
-			}
-		}).listen(8090);
+						final String chatRoom = m.group(1);
+						final String id = ws.textHandlerID();
+						logger.info("registering new connection with id: " + id
+								+ " for chat-room: " + chatRoom);
+						vertx.sharedData().getSet("chat.room." + chatRoom)
+								.add(id);
+
+						ws.closeHandler(new Handler<Void>() {
+							@Override
+							public void handle(final Void event) {
+								logger.info("un-registering connection with id: "
+										+ id + " from chat-room: " + chatRoom);
+								vertx.sharedData()
+										.getSet("chat.room." + chatRoom)
+										.remove(id);
+							}
+						});
+
+						ws.dataHandler(new Handler<Buffer>() {
+							@Override
+							public void handle(final Buffer data) {
+
+								ObjectMapper m = new ObjectMapper();
+								try {
+									JsonNode rootNode = m.readTree(data
+											.toString());
+									((ObjectNode) rootNode).put("received",
+											new Date().toString());
+									String jsonOutput = m
+											.writeValueAsString(rootNode);
+									logger.info("json generated: " + jsonOutput);
+									for (Object chatter : vertx.sharedData()
+											.getSet("chat.room." + chatRoom)) {
+										eventBus.send((String) chatter,
+												jsonOutput);
+									}
+								} catch (IOException e) {
+									ws.reject();
+								}
+							}
+						});
+
+					}
+				}).listen(8080, "localhost");
 	}
 }
